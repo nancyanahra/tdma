@@ -19,7 +19,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f4xx_hal.h"
-#include "stm32f4xx_hal_uart.h"
+#include "stm32f4xx_hal_def.h"
+#include "stm32f4xx_hal_gpio.h"
+#include "stm32f4xx_hal_spi.h"
+#include <stdint.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -33,6 +36,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define NRF24_MAX_PAYLOAD 32u
 
 /* USER CODE END PD */
 
@@ -44,12 +48,16 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+SPI_HandleTypeDef hspi2;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+uint8_t TX_Buffer [] = "A" ; //data to send
+uint8_t RX_Buffer[1+NRF24_MAX_PAYLOAD];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,6 +65,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -67,6 +76,12 @@ static void MX_USART2_UART_Init(void);
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+}
+
+static HAL_StatusTypeDef nrf_xfer(uint8_t *tx, uint8_t *rx, uint16_t len){
+  HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_RESET);
+  HAL_StatusTypeDef status_type = HAL_SPI_TransmitReceive(&hspi2, tx, tx, len, 100);
+  HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_SET);
 }
 uint8_t tx_buff[] = {0,1,2,3,4,5,6,7,8,9};
 
@@ -103,8 +118,32 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_USART2_UART_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
+
+  HAL_Delay(100);
+  uint8_t tx[2], rx[2], result[3];
+
+  tx[0] = 0xFF; // NOP return status
+  nrf_xfer(tx, rx, 1);
+  result[0] = rx[0];
+
+  tx[0] = 0x00; tx[1] = 0xFF;             // R_REGISTER CONFIG (0x00)
+  nrf_xfer(tx, rx, 2);
+  result[1] = rx[1];
+
+  tx[0] = 0x20 | 0x05; tx[1] = 0x2A;      // W_REGISTER RF_CH (0x05) = 0x2A
+  nrf_xfer(tx, rx, 2);
+
+  tx[0] = 0x05; tx[1] = 0xFF;             // R_REGISTER RF_CH, read it back
+  nrf_xfer(tx, rx, 2);
+  result[2] = rx[1];
+  
+  HAL_UART_Transmit(&huart2, result, 3,100);
+
+
   HAL_TIM_Base_Start_IT(&htim2);
+  
 
   /* USER CODE END 2 */
 
@@ -120,21 +159,12 @@ int main(void)
   while (1)
   {
 
-    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
-
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
-    }
-    else {
-    {
-      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
-    }
-    }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-    HAL_UART_Transmit(&huart2, tx_buff, 10,1000);
+    //HAL_UART_Transmit(&huart2, tx_buff, 10,1000);
     HAL_Delay(10000);
   }
   /* USER CODE END 3 */
@@ -185,6 +215,44 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief SPI2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI2_Init(void)
+{
+
+  /* USER CODE BEGIN SPI2_Init 0 */
+
+  /* USER CODE END SPI2_Init 0 */
+
+  /* USER CODE BEGIN SPI2_Init 1 */
+
+  /* USER CODE END SPI2_Init 1 */
+  /* SPI2 parameter configuration*/
+  hspi2.Instance = SPI2;
+  hspi2.Init.Mode = SPI_MODE_MASTER;
+  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi2.Init.NSS = SPI_NSS_SOFT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi2.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI2_Init 2 */
+
+  /* USER CODE END SPI2_Init 2 */
+
 }
 
 /**
@@ -286,12 +354,25 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PA5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PA5 CSN_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_5|CSN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CE_Pin */
+  GPIO_InitStruct.Pin = CE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(CE_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
