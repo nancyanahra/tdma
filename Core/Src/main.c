@@ -80,8 +80,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 static HAL_StatusTypeDef nrf_xfer(uint8_t *tx, uint8_t *rx, uint16_t len){
   HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_RESET);
-  HAL_StatusTypeDef status_type = HAL_SPI_TransmitReceive(&hspi2, tx, tx, len, 100);
+  HAL_StatusTypeDef status_type = HAL_SPI_TransmitReceive(&hspi2, tx, rx, len, 100);
   HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_SET);
+  return status_type;
 }
 uint8_t tx_buff[] = {0,1,2,3,4,5,6,7,8,9};
 
