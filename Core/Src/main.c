@@ -26,7 +26,7 @@
 #include "stm32f4xx_hal_gpio.h"
 #include "stm32f4xx_hal_spi.h"
 #include <stdint.h>
-
+#include "../../Radio/Inc/nrf24l01.h"
 
 /* USER CODE END Includes */
 
@@ -69,7 +69,6 @@ static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-static HAL_StatusTypeDef nrf_xfer(uint8_t *tx, uint8_t *rx, uint16_t len);
 
 /* USER CODE END PFP */
 
@@ -79,54 +78,6 @@ static HAL_StatusTypeDef nrf_xfer(uint8_t *tx, uint8_t *rx, uint16_t len);
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-}
-static HAL_StatusTypeDef nrf_xfer(uint8_t *tx, uint8_t *rx, uint16_t len){
-  HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_RESET);
-  HAL_StatusTypeDef status_type = HAL_SPI_TransmitReceive(&hspi2, tx, rx, len, 100);
-  HAL_GPIO_WritePin(CSN_GPIO_Port, CSN_Pin, GPIO_PIN_SET);
-  return status_type;
-}
-
-//   uint8_t tx[2], rx[2], result[3];
-static HAL_StatusTypeDef nrf_read_reg(uint8_t reg, uint8_t *val){
-
-  uint8_t tx[2], rx[2];
-  tx[0] = 0x00 | reg; // 0x00 is the READ register
-  tx[1] = 0xFF; // no data to transmit when reading
-  HAL_StatusTypeDef status = nrf_xfer(tx, rx, 2);
-  if (status == HAL_OK) {
-    *val = rx[1];
-  }
-  return status;
-}
-
-// write to just 1 register
-static HAL_StatusTypeDef nrf_write_reg(uint8_t reg, uint8_t val){
-  
-  uint8_t tx[2], rx[2];
-  tx[0] = 0x20 | reg;
-  tx[1] = val;
-  return nrf_xfer(tx, rx, 2);
-}
-
-// write a multi-byte register (address)
-static HAL_StatusTypeDef nrf_write_buf(uint8_t reg, const uint8_t *vals, uint8_t n){
-  if( n > NRF24_MAX_PAYLOAD){
-    return HAL_ERROR;
-  }
-  uint8_t tx[NRF24_MAX_PAYLOAD+1], rx[NRF24_MAX_PAYLOAD+1];
-  tx[0] = 0x20 | reg;
-  for (int i = 0; i < n; i ++){
-    tx[i+1] = vals[i];
-  }
-  return nrf_xfer(tx, rx, n+1);
-}
-
-// for single byte radio commands, lik flushing TX and RX
-static HAL_StatusTypeDef nrf_cmd(uint8_t cmd){
-  uint8_t tx[1], rx[1];
-  tx[0] = cmd; 
-  return nrf_xfer(tx,rx,1); // rx will return the STATUS byte
 }
 
 uint8_t tx_buff[] = {0,1,2,3,4,5,6,7,8,9};
@@ -169,21 +120,27 @@ int main(void)
 
   HAL_Delay(100);
 
+  if (nrf_init(&hspi2) != HAL_OK) {
+    const char msg[] = "nrf_init FAILED\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
+  }
+
+
   nrf_write_reg(0x05, 0x2A);
   uint8_t rx[2];
   nrf_read_reg(0x05,rx);
   HAL_UART_Transmit(&huart2, rx, 1,100);
 
 
-  uint8_t addr[5] ={0x11, 0x22, 0x33, 0x44, 0x55};
-  nrf_write_buf(0x10, addr, 6);
+  // uint8_t addr[5] ={0x11, 0x22, 0x33, 0x44, 0x55};
+  // nrf_write_buf(0x10, addr, 5);
 
-  uint8_t tx[6], rx2[6];
-  tx[0] = 0x10;
-  tx[1] = 0xFF; tx[2] = 0xFF; tx[3] = 0xFF; tx[4] = 0xFF; tx[5] = 0xFF;
+  // uint8_t tx[6], rx2[6];
+  // tx[0] = 0x10;
+  // tx[1] = 0xFF; tx[2] = 0xFF; tx[3] = 0xFF; tx[4] = 0xFF; tx[5] = 0xFF;
 
-  nrf_xfer(tx,rx2,6 ); // just to read
-  HAL_UART_Transmit(&huart2, &rx2[0], 6,100);
+  // nrf_xfer(tx,rx2,6 ); // just to read
+  // HAL_UART_Transmit(&huart2, &rx2[0], 6,100);
 
   HAL_TIM_Base_Start_IT(&htim2);
   
