@@ -79,7 +79,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 }
 
-uint8_t tx_buff[] = {0,1,2,3,4,5,6,7,8,9};
 
 /* USER CODE END 0 */
 
@@ -234,12 +233,6 @@ int main(void)
       }
     #endif
 
-      
-    
-
-
-
-    //HAL_UART_Transmit(&huart2, tx_buff, 10,1000);
   }
   /* USER CODE END 3 */
 }
