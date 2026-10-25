@@ -25,3 +25,4 @@ compile_commands.json
 *~
 mx.scratch
 !.settings
+!.vscode/launch.json
