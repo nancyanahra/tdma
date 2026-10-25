@@ -26,6 +26,7 @@
 #include "stm32f4xx_hal_gpio.h"
 #include "stm32f4xx_hal_spi.h"
 #include <stdint.h>
+#include <stdio.h>
 #include "../../Radio/Inc/nrf24l01.h"
 
 /* USER CODE END Includes */
@@ -37,8 +38,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NRF24_MAX_PAYLOAD 32u
-#define NODE_ROLE_TX 1 // transmitter =1 and receiver =0
+#define NRF24_PAYLOAD_LEN 4u
+#define NODE_ROLE_TX 0 // transmitter =1 and receiver =0
 
 /* USER CODE END PD */
 
@@ -58,8 +59,6 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
-uint8_t TX_Buffer [] = "A" ; //data to send
-uint8_t RX_Buffer[1+NRF24_MAX_PAYLOAD];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -125,22 +124,46 @@ int main(void)
     HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
   }
 
+  // Primary transmitter (PTX) address and receive address data pipe 0
+   const uint8_t addr[5] = {0xE7, 0xE7, 0xE7, 0xE7, 0xE7};
 
-  nrf_write_reg(0x05, 0x2A);
-  uint8_t rx[2];
-  nrf_read_reg(0x05,rx);
-  HAL_UART_Transmit(&huart2, rx, 1,100);
+  // radio config, same on board boards eexcept CONFIG and CE
+  nrf_write_reg(NRF_REG_CONFIG, 0x00); // power radio down while changing settins
+  nrf_write_reg(NRF_REG_RF_CH, 0x2A);
+  nrf_write_reg(NRF_REG_RF_SETUP, 0x06);
+  nrf_write_reg(NRF_REG_SETUP_AW, 0x03); // set to 5 byte addresses
+  nrf_write_reg(NRF_REG_EN_AA, 0x01);
+  nrf_write_reg(NRF_REG_EN_RXADDR, 0x01); // enable pipe 0 only
+  nrf_write_reg(NRF_REG_SETUP_RETR, 0x13); // retry delay 500 us 3 retries 
 
+  nrf_write_buf(NRF_REG_TX_ADDR, addr, 5);      // who we send to
+  nrf_write_buf(NRF_REG_RX_ADDR_P0, addr, 5);   // same address: RX listens here, TX hears its ack here
+  nrf_write_reg(NRF_REG_RX_PW_P0, NRF24_PAYLOAD_LEN);
 
-  // uint8_t addr[5] ={0x11, 0x22, 0x33, 0x44, 0x55};
-  // nrf_write_buf(0x10, addr, 5);
+  nrf_cmd(NRF_FLUSH_TX);
+  nrf_cmd(NRF_FLUSH_RX);
+  nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR | NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT);
 
-  // uint8_t tx[6], rx2[6];
-  // tx[0] = 0x10;
-  // tx[1] = 0xFF; tx[2] = 0xFF; tx[3] = 0xFF; tx[4] = 0xFF; tx[5] = 0xFF;
+  // Power radio on for both boards!
+  #if NODE_ROLE_TX
+    nrf_write_reg(NRF_REG_CONFIG, NRF_CONFIG_EN_CRC | NRF_CONFIG_PWR_UP);
+    HAL_Delay(2); // POWER up time is about 1.5ms
+  #else
+    // set primary receiver bits
+    nrf_write_reg(NRF_REG_CONFIG, NRF_CONFIG_EN_CRC | NRF_CONFIG_PWR_UP | NRF_CONFIG_PRIM_RX);
+    HAL_Delay(2);                                
+    HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_SET);   // start listening, leave high
+  #endif   
 
-  // nrf_xfer(tx,rx2,6 ); // just to read
-  // HAL_UART_Transmit(&huart2, &rx2[0], 6,100);
+  uint8_t cfg, ch, pw;
+  nrf_read_reg(NRF_REG_CONFIG, &cfg);
+  nrf_read_reg(NRF_REG_RF_CH, &ch);
+  nrf_read_reg(NRF_REG_RX_PW_P0, &pw);
+  char msg[64];
+  int len = snprintf(msg, sizeof msg, "%s CONFIG=0x%02X RF_CH=0x%02X RX_PW_P0=%u\r\n",
+                     NODE_ROLE_TX ? "TX" : "RX", cfg, ch, pw);
+  HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
+
 
   HAL_TIM_Base_Start_IT(&htim2);
   
@@ -164,8 +187,59 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    uint8_t status;
+
+    #if NODE_ROLE_TX
+      uint8_t payload[NRF24_PAYLOAD_LEN] = {1,2,3,4};
+      nrf_write_payload(payload, NRF24_PAYLOAD_LEN);
+
+      HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_SET );
+      HAL_Delay(1);
+      HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_RESET );
+
+      uint32_t start = HAL_GetTick();
+      do {
+        nrf_read_reg(NRF_REG_STATUS, &status);
+      } while (!(status & (NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT)) && (HAL_GetTick() - start)<10);
+
+      if (status & NRF_STATUS_TX_DS) {
+        const char msg[] = "TX success \r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
+        
+      } else if (status & NRF_STATUS_MAX_RT){
+        const char msg[] = "MAX number of retransmits \r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
+        nrf_cmd(NRF_FLUSH_TX); // failed packet still in outbox
+        
+      } else {
+        const char msg[] = " Timeout. Neither light came on \r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
+        
+      }
+      //status reg is write 1 to clear
+      nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT); //clear both of the TX flags 
+      HAL_Delay(500);
+    #else 
+    // if the board is the RX board
+      nrf_read_reg(NRF_REG_STATUS, &status);
+      if( status & NRF_STATUS_RX_DR) {
+        uint8_t payload[NRF24_PAYLOAD_LEN];
+        nrf_read_payload(payload, NRF24_PAYLOAD_LEN); 
+        // print 4 bytes
+        char msg[40];
+        int len = snprintf(msg, sizeof msg, "RX received: %u %u %u %u \r\n",
+              payload[0],payload[1],payload[2],payload[3]);
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
+        nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR);
+      }
+    #endif
+
+      
+    
+
+
+
     //HAL_UART_Transmit(&huart2, tx_buff, 10,1000);
-    HAL_Delay(10000);
   }
   /* USER CODE END 3 */
 }

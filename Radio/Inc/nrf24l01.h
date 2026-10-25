@@ -2,6 +2,7 @@
 #define NRF24l01_H
 
 #include "main.h"      // pull in HAL types
+#include "stm32f4xx_hal_def.h"
 #include <stdint.h>
 
 // SPI commands (nRF24L01 datasheet)
@@ -17,6 +18,7 @@
 #define NRF_REG_CONFIG          0x00u
 #define NRF_REG_EN_AA           0x01u
 #define NRF_REG_EN_RXADDR       0x02u
+// setup address widths
 #define NRF_REG_SETUP_AW        0x03u
 #define NRF_REG_SETUP_RETR      0x04u
 #define NRF_REG_RF_CH           0x05u
@@ -51,5 +53,7 @@ HAL_StatusTypeDef nrf_write_reg(uint8_t reg, uint8_t val);
 HAL_StatusTypeDef nrf_write_buf(uint8_t reg, const uint8_t *vals, uint8_t n);
 HAL_StatusTypeDef nrf_cmd      (uint8_t cmd);
 
+HAL_StatusTypeDef nrf_read_payload(uint8_t *data, uint8_t n);
+HAL_StatusTypeDef nrf_write_payload(const uint8_t *data, uint8_t n);
 
 #endif 
