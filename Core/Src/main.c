@@ -131,9 +131,9 @@ int main(void)
   nrf_write_reg(NRF_REG_RF_CH, 0x2A);
   nrf_write_reg(NRF_REG_RF_SETUP, 0x06);
   nrf_write_reg(NRF_REG_SETUP_AW, 0x03); // set to 5 byte addresses
-  nrf_write_reg(NRF_REG_EN_AA, 0x01);
+  nrf_write_reg(NRF_REG_EN_AA, 0x00); // Tturn auto ack off. just broadcast w no replies
   nrf_write_reg(NRF_REG_EN_RXADDR, 0x01); // enable pipe 0 only
-  nrf_write_reg(NRF_REG_SETUP_RETR, 0x13); // retry delay 500 us 3 retries 
+  nrf_write_reg(NRF_REG_SETUP_RETR, 0x00); // no retransmits
 
   nrf_write_buf(NRF_REG_TX_ADDR, addr, 5);      // who we send to
   nrf_write_buf(NRF_REG_RX_ADDR_P0, addr, 5);   // same address: RX listens here, TX hears its ack here
@@ -202,7 +202,7 @@ int main(void)
       } while (!(status & (NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT)) && (HAL_GetTick() - start)<10);
 
       if (status & NRF_STATUS_TX_DS) {
-        const char msg[] = "TX success \r\n";
+        const char msg[] = "TX sent \r\n";
         HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
         
       } else if (status & NRF_STATUS_MAX_RT){
