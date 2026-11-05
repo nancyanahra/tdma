@@ -39,7 +39,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define NRF24_PAYLOAD_LEN 4u
-#define NODE_ROLE_TX 0 // transmitter =1 and receiver =0
+#define NODE_ID 1 // transmitter = 0 and receivers = 1, 2
 
 /* USER CODE END PD */
 
@@ -144,7 +144,7 @@ int main(void)
   nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR | NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT);
 
   // Power radio on for both boards!
-  #if NODE_ROLE_TX
+  #if NODE_ID == 0
     nrf_write_reg(NRF_REG_CONFIG, NRF_CONFIG_EN_CRC | NRF_CONFIG_PWR_UP);
     HAL_Delay(2); // POWER up time is about 1.5ms
   #else
@@ -160,7 +160,7 @@ int main(void)
   nrf_read_reg(NRF_REG_RX_PW_P0, &pw);
   char msg[64];
   int len = snprintf(msg, sizeof msg, "%s CONFIG=0x%02X RF_CH=0x%02X RX_PW_P0=%u\r\n",
-                     NODE_ROLE_TX ? "TX" : "RX", cfg, ch, pw);
+                     NODE_ID, cfg, ch, pw);
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
 
 
@@ -188,7 +188,7 @@ int main(void)
 
     uint8_t status;
 
-    #if NODE_ROLE_TX
+    #if NODE_ID == 0
       uint8_t payload[NRF24_PAYLOAD_LEN] = {1,2,3,4};
       nrf_write_payload(payload, NRF24_PAYLOAD_LEN);
 
@@ -468,7 +468,7 @@ void Error_Handler(void)
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
+  * param  file: pointer to the source file name
   * @param  line: assert_param error line source number
   * @retval None
   */

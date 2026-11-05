@@ -26,6 +26,19 @@
             "imagesAndSymbols": [
                 { "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}" }
             ]
-        }
+        },
+        {
+            "type": "stlinkgdbtarget",
+            "request": "launch",
+            "name": "Board C (…5235, ttyACM2)",
+            "origin": "snippet",
+            "cwd": "${workspaceFolder}",
+            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
+            "runEntry": "main",
+            "serverSerialNumber": "066EFF515086874967255235",
+            "imagesAndSymbols": [
+                { "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}" }
+            ]
+        },
     ]
 }
