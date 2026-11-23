@@ -229,13 +229,18 @@ int main(void)
     // if the board is the RX board
       nrf_read_reg(NRF_REG_STATUS, &status);
       if( status & NRF_STATUS_RX_DR) {
-               pkt_t pkt;
-        nrf_read_payload((uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
-        char msg[48];
-        int len = snprintf(msg, sizeof msg, "RX type=%u src=%u origin=%u seq=%u\r\n",
-                           pkt.type, pkt.src, pkt.origin, pkt.seq);
-        HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
-        nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR);
+        // copy of radio's 1-byte status register for FIFO info
+        uint8_t fifo;
+        do {
+          pkt_t pkt;
+          nrf_read_payload((uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
+          nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR);
+          char msg[48];
+          int len = snprintf(msg, sizeof msg, "RX type=%u src=%u origin=%u seq=%u\r\n",
+                            pkt.type, pkt.src, pkt.origin, pkt.seq);
+          HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
+          nrf_read_reg(NRF_REG_FIFO_STATUS, &fifo); // reads if FIFO is empty or not, but in FIFO
+        } while (!(fifo & NRF_FIFO_RX_EMPTY)); // if fifo not empty, repeat
       }
     #endif
 
