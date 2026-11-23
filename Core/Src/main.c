@@ -27,6 +27,7 @@
 #include "stm32f4xx_hal_spi.h"
 #include <stdint.h>
 #include <stdio.h>
+#include "../../Net/Inc/packet.h"
 #include "../../Radio/Inc/nrf24l01.h"
 
 /* USER CODE END Includes */
@@ -38,8 +39,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NRF24_PAYLOAD_LEN 4u
-#define NODE_ID 1 // transmitter = 0 and receivers = 1, 2
+#define NODE_ID 2 // transmitter = 0 and receivers = 1, 2
 
 /* USER CODE END PD */
 
@@ -58,7 +58,7 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+static uint8_t tx_seq = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -159,7 +159,7 @@ int main(void)
   nrf_read_reg(NRF_REG_RF_CH, &ch);
   nrf_read_reg(NRF_REG_RX_PW_P0, &pw);
   char msg[64];
-  int len = snprintf(msg, sizeof msg, "%s CONFIG=0x%02X RF_CH=0x%02X RX_PW_P0=%u\r\n",
+  int len = snprintf(msg, sizeof msg, "N%d CONFIG=0x%02X RF_CH=0x%02X RX_PW_P0=%u\r\n",
                      NODE_ID, cfg, ch, pw);
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
 
@@ -189,8 +189,14 @@ int main(void)
     uint8_t status;
 
     #if NODE_ID == 0
-      uint8_t payload[NRF24_PAYLOAD_LEN] = {1,2,3,4};
-      nrf_write_payload(payload, NRF24_PAYLOAD_LEN);
+      //uint8_t payload[NRF24_PAYLOAD_LEN] = {1,2,3,4};
+      pkt_t pkt;
+      pkt.type = PKT_BEACON;
+      pkt.src = NODE_ID;
+      pkt.origin = NODE_ID;
+      pkt.seq = tx_seq++;
+
+      nrf_write_payload((const uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
 
       HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_SET );
       HAL_Delay(1);
@@ -202,8 +208,9 @@ int main(void)
       } while (!(status & (NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT)) && (HAL_GetTick() - start)<10);
 
       if (status & NRF_STATUS_TX_DS) {
-        const char msg[] = "TX sent \r\n";
-        HAL_UART_Transmit(&huart2, (uint8_t *)msg, sizeof(msg) - 1, 100);
+        char msg[24];
+        int len = snprintf(msg, sizeof msg, "TX seq=%u\r\n", pkt.seq);
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
         
       } else if (status & NRF_STATUS_MAX_RT){
         const char msg[] = "MAX number of retransmits \r\n";
@@ -222,12 +229,11 @@ int main(void)
     // if the board is the RX board
       nrf_read_reg(NRF_REG_STATUS, &status);
       if( status & NRF_STATUS_RX_DR) {
-        uint8_t payload[NRF24_PAYLOAD_LEN];
-        nrf_read_payload(payload, NRF24_PAYLOAD_LEN); 
-        // print 4 bytes
-        char msg[40];
-        int len = snprintf(msg, sizeof msg, "RX received: %u %u %u %u \r\n",
-              payload[0],payload[1],payload[2],payload[3]);
+               pkt_t pkt;
+        nrf_read_payload((uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
+        char msg[48];
+        int len = snprintf(msg, sizeof msg, "RX type=%u src=%u origin=%u seq=%u\r\n",
+                           pkt.type, pkt.src, pkt.origin, pkt.seq);
         HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
         nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR);
       }
