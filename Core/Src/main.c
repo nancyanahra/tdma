@@ -79,6 +79,50 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
   HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 }
 
+#if NODE_ID ==1
+
+static uint8_t relay_packet(pkt_t pkt){
+
+  uint8_t status;
+  pkt.src = NODE_ID; // N1 will send this copy
+
+  // to switch N1 to be a transmitter (to relay pckts to N2), we need to bring CE low, then bring it up later
+  HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_RESET);
+
+  // TRANSMIT MODE (prim_rx = 0 is transmit mode)
+  nrf_write_reg(NRF_REG_CONFIG, NRF_CONFIG_EN_CRC | NRF_CONFIG_PWR_UP);
+
+  //put packet in the TX FIFO, to be sent
+  nrf_write_payload((const uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
+   
+  // section 6.1.5 in datasheet
+  // this pulse starts a TX send
+  HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_RESET);
+
+
+  uint32_t start = HAL_GetTick();
+  // keep checking while packet is not sent yet & less than 10 ms have passed
+  do {
+    nrf_read_reg(NRF_REG_STATUS, &status);
+  } while (!(status & NRF_STATUS_TX_DS) && (HAL_GetTick() - start) < 10);
+
+
+  uint8_t ok = (status & NRF_STATUS_TX_DS) ? 1 : 0;
+  if (!ok) {
+    nrf_cmd(NRF_FLUSH_TX);
+  }
+  nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_TX_DS); // write 1 to clear
+
+  // go back to RX mode 
+  nrf_write_reg(NRF_REG_CONFIG, NRF_CONFIG_EN_CRC | NRF_CONFIG_PWR_UP | NRF_CONFIG_PRIM_RX);
+  HAL_GPIO_WritePin(CE_GPIO_Port, CE_Pin, GPIO_PIN_SET);
+  return ok;
+
+}
+
+#endif
 
 /* USER CODE END 0 */
 
@@ -235,10 +279,20 @@ int main(void)
           pkt_t pkt;
           nrf_read_payload((uint8_t *)&pkt, NRF24_PAYLOAD_LEN);
           nrf_write_reg(NRF_REG_STATUS, NRF_STATUS_RX_DR);
-          char msg[48];
-          int len = snprintf(msg, sizeof msg, "RX type=%u src=%u origin=%u seq=%u\r\n",
-                            pkt.type, pkt.src, pkt.origin, pkt.seq);
-          HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
+
+          uint8_t accept = (NODE_ID != 2) || (pkt.src == 1); // Node 2 can only receive txed pckts from N1
+          if (accept) {
+            const char *note = "";
+            # if NODE_ID == 1
+            if (pkt.src == 0){
+              note = relay_packet(pkt) ? " Relay successful" : " Relay failed";
+            }
+            #endif
+            char msg[64];
+            int len = snprintf(msg, sizeof msg, "RX type=%u src=%u origin=%u seq=%u%s\r\n",
+                              pkt.type, pkt.src, pkt.origin, pkt.seq, note);
+            HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
+          }
           nrf_read_reg(NRF_REG_FIFO_STATUS, &fifo); // reads if FIFO is empty or not, but in FIFO
         } while (!(fifo & NRF_FIFO_RX_EMPTY)); // if fifo not empty, repeat
       }
