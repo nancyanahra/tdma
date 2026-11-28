@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include "../../Net/Inc/packet.h"
 #include "../../Radio/Inc/nrf24l01.h"
+#include "../../Net/Inc/sync.h"
 
 /* USER CODE END Includes */
 
@@ -40,7 +41,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NODE_ID 2 // transmitter = 0 and receivers = 1, 2
+#define NODE_ID 0 // transmitter = 0 and receivers = 1, 2
 
 /* USER CODE END PD */
 
@@ -212,6 +213,7 @@ int main(void)
 
 
   HAL_TIM_Base_Start_IT(&htim2);
+  sync_init(NODE_ID);
   
 
   /* USER CODE END 2 */
@@ -255,8 +257,9 @@ int main(void)
       } while (!(status & (NRF_STATUS_TX_DS | NRF_STATUS_MAX_RT)) && (HAL_GetTick() - start)<10);
 
       if (status & NRF_STATUS_TX_DS) {
-        char msg[24];
-        int len = snprintf(msg, sizeof msg, "TX seq=%u\r\n", pkt.seq);
+        char msg[48];
+        int len = snprintf(msg, sizeof msg, "TX seq=%u t=%lu\r\n",
+                          pkt.seq, (unsigned long)sync_now_us());
         HAL_UART_Transmit(&huart2, (uint8_t *)msg, len, 100);
         
       } else if (status & NRF_STATUS_MAX_RT){
